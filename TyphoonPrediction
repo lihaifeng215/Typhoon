@@ -1,0 +1,204 @@
+import numpy as np
+from sklearn import linear_model
+import math
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+# parameter
+testRecordNumber = -1482
+
+def LinearRegression(matrix):
+    matrix = np.array(matrix)
+    print('data for LinearRegression.shape:',matrix.shape)
+    number = testRecordNumber
+    X_train = matrix[:number,:-2]
+    X_test = matrix[number:, :-2]
+
+    y_train1 = matrix[:number,-2]
+    y_test1 = matrix[number:,-2]
+
+    regLat = linear_model.LinearRegression()
+    outputLat = regLat.fit(X_train,y_train1).predict(X_test)
+    latError = np.abs(y_test1 - outputLat)
+
+    y_train2 = matrix[:number, -1]
+    y_test2 = matrix[number:, -1]
+
+    regLong = linear_model.LinearRegression()
+    outputLong = regLong.fit(X_train, y_train2).predict(X_test)
+    longError = np.abs(y_test2 - outputLong)
+    error_mean = calcError(latError,longError)
+    print("error_mean:%.2fkm:" %error_mean)
+    Positions = np.column_stack((y_test1, outputLat, y_test2, outputLong))
+    return Positions
+
+def RidgeRegression(matrix,latAlpha,longAlpha):
+    matrix = np.array(matrix)
+    print('data for RidgeRegression.shape:',matrix.shape)
+    number = testRecordNumber
+    X_train = matrix[:number,:-2]
+    X_test = matrix[number:, :-2]
+
+    y_train1 = matrix[:number,-2]
+    y_test1 = matrix[number:,-2]
+
+    regLat = linear_model.Ridge(latAlpha)
+    outputLat = regLat.fit(X_train,y_train1).predict(X_test)
+    latError = np.abs(y_test1 - outputLat)
+
+    y_train2 = matrix[:number, -1]
+    y_test2 = matrix[number:, -1]
+
+    regLong = linear_model.Ridge(longAlpha)
+    outputLong = regLong.fit(X_train, y_train2).predict(X_test)
+    longError = np.abs(y_test2 - outputLong)
+    error_mean = calcError(latError,longError)
+    print("error_mean:%.2fkm:" % error_mean)
+    Positions = np.column_stack((y_test1, outputLat, y_test2, outputLong))
+    return Positions
+
+def LinearLatAndLong(latFeatures,longFeatures):
+    number = testRecordNumber
+    latTrain_X = latFeatures[:number, :-1]
+    latTest_X = latFeatures[number:, :-1]
+
+    latTrain_y = latFeatures[:number, -1]
+    latTest_y = latFeatures[number:, -1]
+
+    regLat = linear_model.LinearRegression()
+    outputLat = regLat.fit(latTrain_X, latTrain_y).predict(latTest_X)
+    latError = np.abs(latTest_y - outputLat)
+
+    longTrain_X = longFeatures[:number, :-1]
+    longTest_X = longFeatures[number:, :-1]
+
+    longTrain_y = longFeatures[:number, -1]
+    longTest_y = longFeatures[number:, -1]
+
+    regLong = linear_model.LinearRegression()
+    outputLong = regLong.fit(longTrain_X, longTrain_y).predict(longTest_X)
+    longError = np.abs(longTest_y - outputLong)
+    error_mean = calcError(latError, longError)
+    print("error_mean:%.2fkm:" % error_mean)
+
+    Positions = np.column_stack((latTest_y, outputLat, longTest_y, outputLong))
+    return Positions
+
+def RidgeLatAndLong(latFeatures,longFeatures,latAlpha,longAlpha):
+    number = testRecordNumber
+    latTrain_X = latFeatures[:number, :-1]
+    latTest_X = latFeatures[number:, :-1]
+
+    latTrain_y = latFeatures[:number, -1]
+    latTest_y = latFeatures[number:, -1]
+
+    regLat = linear_model.Ridge(latAlpha)
+    outputLat = regLat.fit(latTrain_X, latTrain_y).predict(latTest_X)
+    latError = np.abs(latTest_y - outputLat)
+
+    longTrain_X = longFeatures[:number, :-1]
+    longTest_X = longFeatures[number:, :-1]
+
+    longTrain_y = longFeatures[:number, -1]
+    longTest_y = longFeatures[number:, -1]
+
+    regLong = linear_model.Ridge(longAlpha)
+    outputLong = regLong.fit(longTrain_X, longTrain_y).predict(longTest_X)
+    longError = np.abs(longTest_y - outputLong)
+    error_mean = calcError(latError, longError)
+    print("error_mean:%.2fkm:" % error_mean)
+
+    Positions = np.column_stack((latTest_y, outputLat, longTest_y, outputLong))
+    return Positions
+
+def FeatureSelection(data, latAlpha, longAlpha):
+    scaler = StandardScaler()
+    scaler1 = MinMaxScaler()
+    X = data[:, :-2]
+    X = scaler.fit_transform(X)
+    # print(X.shape)
+    Y=scaler1.fit_transform(data[:, -2:])
+    Y_1 = Y[:,-2]
+    Y_2 = Y[:,-1]
+    lasso_1 = linear_model.Lasso(float(latAlpha) / 1000000)
+    lasso_2 = linear_model.Lasso(float(longAlpha) / 1000000)
+    latModel = lasso_1.fit(X, Y_1)
+    longModel = lasso_2.fit(X, Y_2)
+    latMask = latModel.coef_
+    longMask = longModel.coef_
+    return latMask,longMask
+
+def calcError(latError, longError):
+    latError = np.array(latError) * 11.1
+    longError = np.array(longError) * 10
+    print('latError:%.2fkm' % np.mean(latError))
+    print('longError:%.2fkm' % np.mean(longError))
+    error_mean = np.mean(np.sqrt(latError ** 2 + longError ** 2))
+    return error_mean
+
+def cal_distance(Lat_A, Lat_B, Long_A, Long_B):
+    ra = 6378.140  # 赤道半径 (km)
+    rb = 6356.755  # 极半径 (km)
+    flatten = (ra - rb) / ra  # 地球扁率
+    rad_lat_A = math.radians(Lat_A)
+    rad_long_A = math.radians(Long_A)
+    rad_lat_B = math.radians(Lat_B)
+    rad_long_B = math.radians(Long_B)
+    pA = math.atan(rb / ra * math.tan(rad_lat_A))
+    pB = math.atan(rb / ra * math.tan(rad_lat_B))
+    xx = math.acos(math.sin(pA) * math.sin(pB) + math.cos(pA) * math.cos(pB) * math.cos(rad_long_A - rad_long_B))
+    c1 = (math.sin(xx) - xx) * (math.sin(pA) + math.sin(pB)) ** 2 / math.cos(xx / 2) ** 2
+    c2 = (math.sin(xx) + xx) * (math.sin(pA) - math.sin(pB)) ** 2 / math.sin(xx / 2) ** 2
+    dr = flatten / 8 * (c1 - c2)
+    distance = ra * (xx + dr)
+    return distance
+
+if __name__ == '__main__':
+    matrix = np.loadtxt("file/TyphoonFeatures1979.txt",delimiter=',')[:,1:]
+    print('data.shape:',matrix.shape)
+    scaler = MinMaxScaler()
+    matrix[:, :-2] = scaler.fit_transform(matrix[:,:-2])
+
+    Positions = LinearRegression(matrix)
+    dis = 0
+    for line in Positions:
+        dis += cal_distance(line[0] / 10, line[1] / 10, line[2] / 10, line[3] / 10)
+    print('real LinearRegression the average error:%.2fkm:' % (dis / len(Positions)))
+
+    Positions = RidgeRegression(matrix,0.015,0.015)
+    dis = 0
+    for line in Positions:
+        dis += cal_distance(line[0] / 10, line[1] / 10, line[2] / 10, line[3] / 10)
+    print('real RidgeRegression the average error:%.2fkm:' % (dis / len(Positions)))
+
+    latMask,longMask = FeatureSelection(matrix,50,50)
+    # print("latMask:",latMask)
+    # print("longMask:",longMask)
+    latMask = np.append(latMask,[True,False])
+    longMask = np.append(longMask, [False, True])
+    print('latFeatures number:',matrix[:,latMask != 0].shape)
+    print('longFeatures number:',matrix[:,longMask != 0].shape)
+
+    latFeatures = matrix[:,latMask != 0]
+    longFeatures = matrix[:,longMask != 0]
+
+    Positions = LinearLatAndLong(latFeatures, longFeatures)
+    dis = 0
+    for line in Positions:
+        dis += cal_distance(line[0] / 10, line[1] / 10, line[2] / 10, line[3] / 10)
+    print('Linear Regression after feature selection the average error:%.2fkm' % (dis / len(Positions)))
+
+    Positions = RidgeLatAndLong(latFeatures,longFeatures,0.015,0.015)
+    dis = 0
+    for line in Positions:
+        dis += cal_distance(line[0] / 10, line[1] / 10, line[2] / 10, line[3] / 10)
+    print('Ridge Regression after feature selection the average error:%.2fkm' % (dis / len(Positions)))
+
+
+
+
+
+
+
+
+
+
