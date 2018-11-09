@@ -1,0 +1,304 @@
+import numpy as np
+import keras
+from keras.models import Sequential
+from keras.layers import Dense,BatchNormalization,Conv2D,MaxPooling2D,Flatten,Conv2DTranspose
+import tensorflow as tf
+import time
+
+start = time.time()
+tfconfig = tf.ConfigProto(allow_soft_placement=True)
+tfconfig.gpu_options.allow_growth = True
+tf.Session(config=tfconfig)
+
+# 加载数据
+data = np.loadtxt('file/current_z_500hpa_1979.csv',delimiter=',')[:,8:]
+train_data = data[:-2000,:]
+test_data = data[-2000:,:]
+print(train_data.shape)
+
+# 超参数调节
+epoch = 3000
+hiddenNode = 256
+batchSize = 500
+learningRate = [0.1,0.01, 0.001, 0.0001,0.00001,0.000001]
+# learningRate = [0.001, 0.0001,0.00001,0.000001]
+
+#the model worked after a while. and it works very well!
+# 编码器：
+Encoder = Sequential()
+Encoder.add(Conv2D(8,(3,3),padding="same",input_shape=(32,32,1),activation='elu'))
+Encoder.add(MaxPooling2D(pool_size=(2,2)))
+Encoder.add(BatchNormalization())
+Encoder.add(Conv2D(8,(3,3),padding='same',activation='elu'))
+Encoder.add(MaxPooling2D(pool_size=(2,2)))
+Encoder.add(BatchNormalization())
+Encoder.add(Conv2D(4,(3,3),padding="same",activation='elu'))
+
+# 解码器：
+Decoder = Sequential()
+# 使用BN层才能下降!!!。
+# Decoder.add(BatchNormalization(input_shape=(8,8,4)))
+# Decoder.add(Conv2DTranspose(4,(5,5),padding='valid',activation='elu'))
+# Decoder.add(BatchNormalization())
+# Decoder.add(Conv2DTranspose(4,(5,5),padding='valid',activation='elu'))
+# Decoder.add(Flatten())
+# Decoder.add(BatchNormalization())
+# Decoder.add(Dense(1024,activation='elu'))
+Decoder.add(BatchNormalization(input_shape=(8,8,4)))
+Decoder.add(Flatten())
+Decoder.add(Dense(1024,activation='elu'))
+
+
+
+# 自编码器：
+AutoEncoder = Sequential()
+AutoEncoder.add(Encoder)
+AutoEncoder.add(Decoder)
+
+trainMeanError = []
+testMeanError = []
+for i in learningRate:
+    print('learning rate for latitude is :', i)
+    learning_rate = i
+    AutoEncoder.compile(optimizer=keras.optimizers.Adam(learning_rate), loss='mse')
+    if i != 0.1:
+        AutoEncoder.load_weights('logConv256/AutoEncoderConv256.hdf5')
+    print('model builded complete')
+
+    tensorboard = keras.callbacks.TensorBoard(log_dir='logConv256', write_images=True, histogram_freq=0)
+    logger = keras.callbacks.CSVLogger('logConv256/log.csv', separator=',', append=False)
+    earlystop = keras.callbacks.EarlyStopping(monitor='loss', patience=0, verbose=0, mode='auto')
+    model_saver = keras.callbacks.ModelCheckpoint('logConv256/AutoEncoderConv256.hdf5', monitor='loss', verbose=2,
+                                                  save_best_only=True,
+                                                  save_weights_only=True, mode='auto', period=1)
+
+    # 进行训练：
+    AutoEncoder.fit(train_data.reshape(train_data.shape[0],32,32,1), train_data, nb_epoch=epoch, batch_size=batchSize, verbose=2,callbacks=[tensorboard,logger,model_saver])
+    # 得到训练集预测结果
+    outputTrain = AutoEncoder.predict(train_data.reshape(train_data.shape[0],32,32,1), batch_size=1)
+    # 得到训练集拟合精度
+    error = np.mean(np.abs(outputTrain - train_data))
+    trainMeanError.append(error)
+    print('the train_data mean error is :', error)
+
+    # 得到测试集预测结果
+    outputTest = AutoEncoder.predict(test_data.reshape(test_data.shape[0],32,32,1), batch_size=1)
+    # 计算测试集拟合精度
+    error = np.mean(np.abs(outputTest - test_data))
+    testMeanError.append(error)
+    print('the test_data mean error is :', error)
+
+# 得到训练集隐含层
+hiddenTrain = Encoder.predict(train_data.reshape(train_data.shape[0],32,32,1), batch_size=1)
+hiddenTrain = hiddenTrain.reshape(train_data.shape[0],hiddenNode)
+# 得到测试集隐含层
+hiddenTest = Encoder.predict(test_data.reshape(test_data.shape[0],32,32,1), batch_size=1)
+hiddenTest = hiddenTest.reshape(test_data.shape[0],hiddenNode)
+
+# 打印输出结果
+print("trainMeanError:",trainMeanError)
+print("testMeanError:",testMeanError)
+
+# get output
+outputZ500 = np.row_stack((outputTrain,outputTest))
+print('AutoEncoderZ500_256.shape:', outputZ500.shape)
+np.savetxt('file/AutoEncoderConvZ500_256.txt', outputZ500, fmt='%f', delimiter=',')
+
+# get hiddenNode
+hiddenZ500_500 = np.row_stack((hiddenTrain,hiddenTest))
+print('hiddenZ500_256.shape:', hiddenZ500_500.shape)
+np.savetxt('file/hiddenConvZ500_256.txt', hiddenZ500_500, fmt='%f', delimiter=',')
+
+print('use time: %.2f h' %((time.time()-start)/3600))
+
+
+#
+# import numpy as np
+# import keras
+# from keras.models import Sequential
+# from keras.layers import Dense,BatchNormalization
+# # 编码器为:
+# Encoder = Sequential()
+# Encoder.add(Dense(500,input_dim=1024,activation='relu'))
+# # 使用BN层才能下降。
+# Encoder.add(BatchNormalization())
+# # 解码器为：
+# Decoder = Sequential()
+# Decoder.add(Dense(1024,activation='relu',input_dim=500))
+# #autoencoder为：
+# AutoEncoder = Sequential()
+# AutoEncoder.add(Encoder)
+# AutoEncoder.add(Decoder)
+# AutoEncoder.compile(optimizer=keras.optimizers.Adam(0.1), loss='mse')
+# print("the model is compiled!")
+#
+# #加载数据
+# data = np.loadtxt('file/current_z_500hpa_1979.csv',delimiter=',')[:,8:]
+# print("data.shape:",data.shape)
+# train_data = data[:-2000,:]
+# test_data = data[-2000:,:]
+#
+# #进行训练：
+# AutoEncoder.fit(train_data, train_data,nb_epoch=1000,batch_size=500,verbose=2)
+# #得到训练集预测结果
+# output = AutoEncoder.predict(train_data,batch_size=1)
+# #计算训练集拟合精度
+# error = np.mean(np.abs(output - train_data))
+# print('the train_data mean error is :', error)
+# #得到测试集预测结果
+# output = AutoEncoder.predict(test_data,batch_size=1)
+# #得到测试集拟合精度
+# error = np.mean(np.abs(output - test_data))
+# print('the test_data mean error is :', error)
+
+
+
+
+# import numpy as np
+# import keras
+# from keras.models import Sequential
+# from keras.layers import Dense,BatchNormalization,Conv2D,MaxPooling2D,Flatten,Conv2DTranspose
+# import tensorflow as tf
+# import time
+#
+# start = time.time()
+# tfconfig = tf.ConfigProto(allow_soft_placement=True)
+# tfconfig.gpu_options.allow_growth = True
+# tf.Session(config=tfconfig)
+#
+# # 加载数据
+# data = np.loadtxt('file/current_z_500hpa_1979.csv',delimiter=',')[:,8:]
+# train_data = data[:-2000,:]
+# test_data = data[-2000:,:]
+# print(train_data.shape)
+#
+# # 超参数调节
+# epoch = 2000
+# hiddenNode = 256
+# batchSize = 500
+# learningRate = [0.1,0.01, 0.001, 0.0001,0.00001,0.000001]
+# # learningRate = [0.001, 0.0001,0.00001,0.000001]
+#
+# #the model worked after a while. and it works very well!
+# # 编码器：
+# Encoder = Sequential()
+# Encoder.add(Conv2D(8,(3,3),padding="same",input_shape=(32,32,1),activation='elu'))
+# Encoder.add(MaxPooling2D(pool_size=(2,2)))
+# Encoder.add(BatchNormalization())
+# Encoder.add(Conv2D(8,(3,3),padding='same',activation='elu'))
+# Encoder.add(MaxPooling2D(pool_size=(2,2)))
+# Encoder.add(BatchNormalization())
+# Encoder.add(Conv2D(4,(3,3),padding="same",activation='elu'))
+#
+# # 解码器：
+# Decoder = Sequential()
+# # 使用BN层才能下降!!!。
+# Decoder.add(BatchNormalization(input_shape=(8,8,4)))
+# Decoder.add(Conv2DTranspose(4,(5,5),padding='valid',activation='elu'))
+# Decoder.add(BatchNormalization())
+# Decoder.add(Conv2DTranspose(4,(5,5),padding='valid',activation='elu'))
+# Decoder.add(Flatten())
+# Decoder.add(BatchNormalization())
+# Decoder.add(Dense(1024,activation='elu'))
+#
+#
+# # 自编码器：
+# AutoEncoder = Sequential()
+# AutoEncoder.add(Encoder)
+# AutoEncoder.add(Decoder)
+#
+# trainMeanError = []
+# testMeanError = []
+# for i in learningRate:
+#     print('learning rate for latitude is :', i)
+#     learning_rate = i
+#     AutoEncoder.compile(optimizer=keras.optimizers.Adam(learning_rate), loss='mse')
+#     if i != 0.1:
+#         AutoEncoder.load_weights('logConv256/AutoEncoderConv256.hdf5')
+#     print('model builded complete')
+#
+#     tensorboard = keras.callbacks.TensorBoard(log_dir='logConv256', write_images=True, histogram_freq=0)
+#     logger = keras.callbacks.CSVLogger('logConv256/log.csv', separator=',', append=False)
+#     earlystop = keras.callbacks.EarlyStopping(monitor='loss', patience=0, verbose=0, mode='auto')
+#     model_saver = keras.callbacks.ModelCheckpoint('logConv256/AutoEncoderConv256.hdf5', monitor='loss', verbose=2,
+#                                                   save_best_only=True,
+#                                                   save_weights_only=True, mode='auto', period=1)
+#
+#     # 进行训练：
+#     AutoEncoder.fit(train_data.reshape(train_data.shape[0],32,32,1), train_data, nb_epoch=epoch, batch_size=batchSize, verbose=2,callbacks=[tensorboard,logger,model_saver])
+#     # 得到训练集预测结果
+#     outputTrain = AutoEncoder.predict(train_data.reshape(train_data.shape[0],32,32,1), batch_size=1)
+#     # 得到训练集拟合精度
+#     error = np.mean(np.abs(outputTrain - train_data))
+#     trainMeanError.append(error)
+#     print('the train_data mean error is :', error)
+#
+#     # 得到测试集预测结果
+#     outputTest = AutoEncoder.predict(test_data.reshape(test_data.shape[0],32,32,1), batch_size=1)
+#     # 计算测试集拟合精度
+#     error = np.mean(np.abs(outputTest - test_data))
+#     testMeanError.append(error)
+#     print('the test_data mean error is :', error)
+#
+# # 得到训练集隐含层
+# hiddenTrain = Encoder.predict(train_data.reshape(train_data.shape[0],32,32,1), batch_size=1)
+# hiddenTrain = hiddenTrain.reshape(train_data.shape[0],hiddenNode)
+# # 得到测试集隐含层
+# hiddenTest = Encoder.predict(test_data.reshape(test_data.shape[0],32,32,1), batch_size=1)
+# hiddenTest = hiddenTest.reshape(test_data.shape[0],hiddenNode)
+#
+# # 打印输出结果
+# print("trainMeanError:",trainMeanError)
+# print("testMeanError:",testMeanError)
+#
+# # get output
+# outputZ500 = np.row_stack((outputTrain,outputTest))
+# print('AutoEncoderZ500_256.shape:', outputZ500.shape)
+# np.savetxt('file/AutoEncoderConvZ500_256.txt', outputZ500, fmt='%f', delimiter=',')
+#
+# # get hiddenNode
+# hiddenZ500_500 = np.row_stack((hiddenTrain,hiddenTest))
+# print('hiddenZ500_256.shape:', hiddenZ500_500.shape)
+# np.savetxt('file/hiddenConvZ500_256.txt', hiddenZ500_500, fmt='%f', delimiter=',')
+#
+# print('use time: %.2f h' %((time.time()-start)/3600))
+#
+#
+# #
+# # import numpy as np
+# # import keras
+# # from keras.models import Sequential
+# # from keras.layers import Dense,BatchNormalization
+# # # 编码器为:
+# # Encoder = Sequential()
+# # Encoder.add(Dense(500,input_dim=1024,activation='relu'))
+# # # 使用BN层才能下降。
+# # Encoder.add(BatchNormalization())
+# # # 解码器为：
+# # Decoder = Sequential()
+# # Decoder.add(Dense(1024,activation='relu',input_dim=500))
+# # #autoencoder为：
+# # AutoEncoder = Sequential()
+# # AutoEncoder.add(Encoder)
+# # AutoEncoder.add(Decoder)
+# # AutoEncoder.compile(optimizer=keras.optimizers.Adam(0.1), loss='mse')
+# # print("the model is compiled!")
+# #
+# # #加载数据
+# # data = np.loadtxt('file/current_z_500hpa_1979.csv',delimiter=',')[:,8:]
+# # print("data.shape:",data.shape)
+# # train_data = data[:-2000,:]
+# # test_data = data[-2000:,:]
+# #
+# # #进行训练：
+# # AutoEncoder.fit(train_data, train_data,nb_epoch=1000,batch_size=500,verbose=2)
+# # #得到训练集预测结果
+# # output = AutoEncoder.predict(train_data,batch_size=1)
+# # #计算训练集拟合精度
+# # error = np.mean(np.abs(output - train_data))
+# # print('the train_data mean error is :', error)
+# # #得到测试集预测结果
+# # output = AutoEncoder.predict(test_data,batch_size=1)
+# # #得到测试集拟合精度
+# # error = np.mean(np.abs(output - test_data))
+# # print('the test_data mean error is :', error)
