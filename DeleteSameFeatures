@@ -1,0 +1,23 @@
+import numpy as np
+Z500 = np.loadtxt("file/hiddenConvZ500_256.txt",delimiter=',')
+list = []
+for i in range(256):
+    if(np.max(Z500[:,i])!=np.min(Z500[:,i])):
+        list.append(i)
+
+print("not same number:",len(list))
+# print(list)
+np.savetxt("file/hiddenConvZ500_256_150features.txt",Z500[:,list],delimiter=',',fmt='%f')
+
+# import numpy as np
+# Z500 = np.loadtxt("file/hiddenNodeZ500.txt",delimiter=',')
+# print(Z500.shape)
+# list = []
+# for i in range(512):
+#     if(np.max(Z500[:,i])!=np.min(Z500[:,i])):
+#         print(i, np.mean(Z500[:, i]))
+#         list.append(i)
+#
+# print(len(list))
+# print(list)
+# np.savetxt("file/Z500_28features.txt",Z500[:,list],delimiter=',',fmt='%f')
