@@ -1,0 +1,272 @@
+from collections import OrderedDict
+import numpy as np
+from skimage.feature import hog
+
+'''记录每个台风的记录数'''
+num_of_record = np.loadtxt("file/TyphoonName1979.txt",delimiter=",",dtype=int,usecols=(0,1))
+recordDict = OrderedDict()
+for i in num_of_record:
+    recordDict[i[0]] = i[1]
+
+'''对填充风速信息的台风记录进行处理'''
+typhoonRouteList = np.loadtxt("file/TyphoonRecord1979.txt",delimiter=",",dtype=int,usecols=(0,3,4,5,6))
+
+'''
+基本信息：
+0:台风编号
+1-4:仅使用当前纬度，经度和前六小时纬度经度
+latError:108.17km
+longError:128.66km
+the average error:185.86km
+
+data = np.loadtxt("file/TyphoonFillWind.txt",delimiter=",",dtype=int,usecols=(0,3,4,5,6))
+print("data.shape:",data.shape)
+data = np.column_stack((data[1:,:3],data[:-1,1:3]))
+print("basic information data.shape",data.shape)
+
+1-4：当前时刻台风的纬度，经度，气压，风速
+5-8：6小时前台风的纬度，经度，气压，风速
+latError:108.08km
+longError:128.14km
+the average error:185.67km
+'''
+data = np.loadtxt("file/TyphoonRecord1979.txt",delimiter=",",dtype=int,usecols=(0,3,4,5,6))
+print("data.shape:",data.shape)
+data = np.column_stack((data[1:,:],data[:-1,1:]))
+print("basic information data.shape",data.shape)
+
+'''
+速度信息：
+9-10：当前台风与6小时前台风的纬度，经度差
+latError:108.06km
+longError:128.14km
+the average error:185.65km
+11：当前台风与6小时前台风的距离
+latError:108.15km
+longError:127.46km
+the average error:185.33km
+两者都添加后的误差
+latError:108.15km
+longError:127.45km
+the average error:185.32km
+'''
+latVelocity = np.abs(data[:,1] - data[:,5])
+longVelocity = np.abs(data[:,2] - data[:,6])
+distance = np.sqrt(latVelocity ** 2 + longVelocity ** 2)
+# data = np.column_stack((data, distance))
+data = np.column_stack((data,latVelocity,longVelocity,distance))
+print("added velocity data,shape:",data.shape)
+
+'''
+科氏力信息：
+12-13：当前台风纬度，经度所受科氏力大小
+F = 2mwvsina   accelarate -> v sin(纬度)
+latError:107.64km
+longError:127.84km
+the average error:185.28km
+14: 合速度所受的科氏力
+latError:105.93km
+longError:127.04km
+the average error:183.02km
+两者都添加
+latError:105.66km
+longError:125.99km
+the average error:181.76km
+'''
+latCoriolis = (data[:,1] - data[:,5]) * np.sin(data[:,1]*np.pi/1800)
+longCoriolis = (data[:,2] - data[:,6]) * np.sin(data[:,1]*np.pi/1800)
+Coriolis = distance * np.sin(data[:,1]*np.pi/1800)
+# data = np.column_stack((data,Coriolis))
+data = np.column_stack((data,latCoriolis,longCoriolis,Coriolis))
+print('added coriolis data,shape:', data.shape)
+
+'''
+添加Z500Pa
+'''
+# 原数据
+# Z500Data = np.loadtxt("file/current_z_500hpa_1979.csv",delimiter=',')[:,8:]
+# Z500Data = np.row_stack((np.zeros((2,1024)),Z500Data))
+
+# 输出数据
+# Z500Data = np.loadtxt("file/AutoEncoderConvZ500_256.txt",delimiter=',')
+# Z500Data = np.row_stack((np.zeros((2,1024)),Z500Data))
+
+# 256维隐含层数据
+# Z500Data = np.loadtxt("file/hiddenConvZ500_256.txt",delimiter=',')
+# Z500Data = np.row_stack((np.zeros((2,256)),Z500Data))
+
+# 150维隐含层数据
+Z500Data = np.loadtxt("file/hiddenConvZ500_256_150features.txt",delimiter=',')
+
+Z500Data = np.row_stack((np.zeros((2,150)),Z500Data))
+data = np.column_stack((data,Z500Data))
+print("add Z500Data:",data.shape)
+
+
+'''
+添加其他影响因素
+'''
+# def addFeatures(data, cell_size, block_size):
+#     length = int(np.sqrt(data.shape[1]))
+#     features = []
+#     for line in data:
+#         feature = []
+#         a = line.reshape(length, length)
+#         feature.append(np.min(a[:, :16]))
+#         feature.append(np.min(a[:, 16:]))
+#         feature.append(np.min(a[:16, :]))
+#         feature.append(np.min(a[16:, :]))
+#         feature.append(np.min(a[:16, :16]))
+#         feature.append(np.min(a[:16, 16:]))
+#         feature.append(np.min(a[16:, :16]))
+#         feature.append(np.min(a[16:, 16:]))
+#
+#         feature.append(np.max(a[:, :16]))
+#         feature.append(np.max(a[:, 16:]))
+#         feature.append(np.max(a[:16, :]))
+#         feature.append(np.max(a[16:, :]))
+#         feature.append(np.max(a[:16, :16]))
+#         feature.append(np.max(a[:16, 16:]))
+#         feature.append(np.max(a[16:, :16]))
+#         feature.append(np.max(a[16:, 16:]))
+#
+#         feature.append(np.mean(a[:, :16]))
+#         feature.append(np.mean(a[:, 16:]))
+#         feature.append(np.mean(a[:16, :]))
+#         feature.append(np.mean(a[16:, :]))
+#         feature.append(np.mean(a[:16, :16]))
+#         feature.append(np.mean(a[:16, 16:]))
+#         feature.append(np.mean(a[16:, :16]))
+#         feature.append(np.mean(a[16:, 16:]))
+#
+#         feature.append(np.mean(a[6:9, 6:9]))
+#         feature.append(np.mean(a[5:10, 5:10]))
+#         feature.append(np.mean(a[:, :]))
+#
+#         feature.append(np.mean(a[12:21, 12:21]) - a[16, 16])
+#         feature.append(np.mean(a[8:25, 8:25]) - a[16, 16])
+#         feature.append(np.mean(a[:, :]) - a[16, 16])
+#
+#         feature.extend(hog(a, orientations=9, pixels_per_cell=(cell_size, cell_size),
+#                            cells_per_block=(block_size, block_size), visualise=False, transform_sqrt=False,
+#                            feature_vector=True, normalise=None))
+#         features.append(feature)
+#     features = np.array(features)
+#     print('features.shape:', features.shape)
+#     return features
+#
+#
+# location_list = ['32x32data/current_msl_32x32_1979.csv',
+#                  '32x32data/current_t2m_32x32_1979.csv',
+#                  '32x32data/current_u_1000hpa_1979.csv',
+#                  '32x32data/current_u_850hpa_1979.csv',
+#                  '32x32data/current_u_500hpa_1979.csv',
+#                  '32x32data/current_u_250hpa_1979.csv',
+#                  '32x32data/current_v_1000hpa_1979.csv',
+#                  '32x32data/current_v_850hpa_1979.csv',
+#                  '32x32data/current_v_500hpa_1979.csv',
+#                  '32x32data/current_v_250hpa_1979.csv',
+#                  '32x32data/current_realtive_humidty_1000hpa_1979.csv',
+#                  '32x32data/current_realtive_humidty_975hpa_1979.csv',
+#                  '32x32data/current_realtive_humidty_850hpa_1979.csv',
+#                  '32x32data/current_realtive_humidty_500hpa_1979.csv',
+#                  '32x32data/current_realtive_humidty_250hpa_1979.csv',
+#                  '32x32data/current_LANDsfc_1979.csv',
+#                  '32x32data/current_ HGTsfs_1979.csv',
+#                  '32x32data/current_z_1000hpa_1979.csv',
+#                  '32x32data/current_z_850hpa_1979.csv',
+#                  '32x32data/current_z_500hpa_1979.csv',
+#                  '32x32data/current_z_250hpa_1979.csv',
+#                  '32x32data/current_vo_1000_1979.csv',
+#                  '32x32data/current_vo_850_1979.csv',
+#                  '32x32data/current_vo_500_1979.csv',
+#                  '32x32data/current_vo_250_1979.csv',
+#                  '32x32data/current_w_1000_1979.csv',
+#                  '32x32data/current_w_850_1979.csv',
+#                  '32x32data/current_w_500_1979.csv',
+#                  '32x32data/current_w_250_1979.csv',
+#                  '32x32data/current_q_1000hpa_1979.csv',
+#                  '32x32data/current_q_975hpa_1979.csv',
+#                  '32x32data/current_q_850hpa_1979.csv',
+#                  '32x32data/current_q_500hpa_1979.csv',
+#                  '32x32data/current_q_250hpa_1979.csv',
+#                  '32x32data/current_t_1000hpa_1979.csv',
+#                  '32x32data/current_t_850hpa_1979.csv',
+#                  '32x32data/current_t_500hpa_1979.csv',
+#                  '32x32data/current_t_400hpa_1979.csv',
+#                  '32x32data/current_t_300hpa_1979.csv',
+#                  '32x32data/current_t_250hpa_1979.csv',
+#                  '32x32data/current_t_200hpa_1979.csv'
+#                  ]
+# parameters = np.loadtxt('32x32data/result_all.txt', delimiter=',', dtype=int, usecols=(1, 2))
+#
+# originalData = data
+# for i in range(len(location_list)):
+#     print('round:~~~%d~~~' %i)
+#     after1979 = np.loadtxt(location_list[i], delimiter=',')[:, 8:]
+#     print('after1979:',after1979.shape)
+#     before1979 = np.zeros((2,after1979.shape[1]))
+#     print('before1979:',before1979.shape)
+#     meteorology = np.row_stack((before1979,after1979))
+#     # meteorology_6 = np.row_stack((np.zeros((1, meteorology.shape[1])), meteorology[:-1]))
+#     cell_size, block_size = parameters[i]
+#     originalData = np.column_stack((originalData,meteorology,addFeatures(meteorology,cell_size,block_size)))
+#     print('orinigalData.shape:',originalData.shape)
+# data = originalData
+# print('add all features.shape:',data.shape)
+
+
+
+'''
+-4--3: 添加24h后的纬度，经度作为预测值
+删除前三条和后四条！！！
+'''
+data = np.column_stack((data[3:-4,:],typhoonRouteList[8:,1:3]))
+print("added 24h values data.shape:",data.shape)
+
+# '''
+# -2--1: 添加纬度经度的24h偏移量作为预测值
+# '''
+# offset = data[:,-2:] - data[:,1:3]
+# data = np.column_stack((data,offset))
+# print("added 24h offset data.shape:",data.shape)
+
+'''
+删除每个台风的前四条和后四条记录
+#开头已删除四条记录，从第五条开始遍历
+'''
+record = []
+s = -4
+for times in recordDict.values():
+    # 若小于四行，record 重复之前的值。删除前后四条
+    s += times
+    for i in range(-4,4):
+        record.append(s+i)
+data = np.delete(data, record, axis=0)
+print("24 hour typhoon record number:", data.shape[0])
+
+'''
+去除小于十条的记录
+'''
+key = []
+for k in recordDict:
+    if recordDict[k] <= 10:
+        key.append(k)
+
+record = []
+for i in range(data.shape[0]):
+    if data[i][0] in key:
+        record.append(i)
+
+data = np.delete(data,record,axis=0)
+print("delete less than 10 record data.shape",data.shape)
+
+'''
+保存数据(with number)
+'''
+np.savetxt('file/TyphoonFeatures1979.txt',data,fmt='%f',delimiter=',')
+
+
+
+
+
